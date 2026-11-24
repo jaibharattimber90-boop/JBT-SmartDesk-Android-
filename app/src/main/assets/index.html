@@ -3431,9 +3431,25 @@ function openInvoicePreview(invoiceHtml){
 
     printButton.addEventListener("click", () => {
       try {
+        // Android APK: hand the complete invoice HTML to the native PrintManager
+        // bridge. Calling iframe.contentWindow.print() is not supported reliably
+        // by Android WebView and therefore may appear to do nothing.
+        if (window.jbtAndroid && typeof window.jbtAndroid.printHtml === "function") {
+          printButton.disabled = true;
+          printButton.textContent = "OPENING PRINTER…";
+          window.jbtAndroid.printHtml(invoiceDocument);
+          setTimeout(() => {
+            printButton.disabled = false;
+            printButton.textContent = "PRINT INVOICE";
+          }, 1800);
+          return;
+        }
+        // Desktop/browser fallback.
         frame.contentWindow.focus();
         frame.contentWindow.print();
       } catch (error) {
+        printButton.disabled = false;
+        printButton.textContent = "PRINT INVOICE";
         alert("Unable to open printing. Please try again.");
         console.error("JBT invoice print error:", error);
       }
