@@ -3393,93 +3393,114 @@ document.getElementById("pdfBillFile").addEventListener("change",async event=>{
 });
 
 function openInvoicePreview(invoiceHtml){
-    // Use an in-app preview instead of window.open(). Android WebView often
-    // cannot close popup windows with window.close(), leaving the user stuck.
-    const oldPreview = document.getElementById("jbtInvoicePreviewOverlay");
-    if (oldPreview) oldPreview.remove();
 
-    const invoiceStyles = Array.from(document.querySelectorAll("style"))
-      .filter(style =>
-        !style.innerHTML.includes("JBT SMARTDESK PROFESSIONAL DARK THEME") &&
-        style.id !== "jbt-white-font-visibility-fix"
-      )
-      .map(style => style.innerHTML)
-      .join("\n");
+        const preview = window.open("", "_blank", "width=1000,height=750");
 
-    const overlay = document.createElement("div");
-    overlay.id = "jbtInvoicePreviewOverlay";
-    overlay.style.cssText = "position:fixed;inset:0;z-index:2147483000;background:#e9e9e9;display:flex;flex-direction:column;";
-
-    const toolbar = document.createElement("div");
-    toolbar.style.cssText = "flex:0 0 auto;display:flex;justify-content:center;gap:10px;padding:10px;background:#292929;";
-
-    const printButton = document.createElement("button");
-    printButton.type = "button";
-    printButton.textContent = "PRINT INVOICE";
-    printButton.style.cssText = "padding:12px 22px;border:0;border-radius:6px;background:#684323;color:white;font-size:15px;font-weight:bold;";
-
-    const closeButton = document.createElement("button");
-    closeButton.type = "button";
-    closeButton.textContent = "CLOSE PREVIEW";
-    closeButton.style.cssText = "padding:12px 22px;border:0;border-radius:6px;background:#555;color:white;font-size:15px;font-weight:bold;";
-    closeButton.addEventListener("click", () => overlay.remove());
-
-    const frame = document.createElement("iframe");
-    frame.title = "Invoice Preview";
-    frame.style.cssText = "border:0;flex:1 1 auto;width:100%;min-height:0;background:white;";
-    frame.setAttribute("allow", "clipboard-read; clipboard-write");
-
-    printButton.addEventListener("click", () => {
-      try {
-        // Android APK: hand the complete invoice HTML to the native PrintManager
-        // bridge. Calling iframe.contentWindow.print() is not supported reliably
-        // by Android WebView and therefore may appear to do nothing.
-        if (window.jbtAndroid && typeof window.jbtAndroid.printHtml === "function") {
-          printButton.disabled = true;
-          printButton.textContent = "OPENING PRINTER…";
-          window.jbtAndroid.printHtml(invoiceDocument);
-          setTimeout(() => {
-            printButton.disabled = false;
-            printButton.textContent = "PRINT INVOICE";
-          }, 1800);
-          return;
+        if(!preview){
+            alert("Please allow pop-ups to open Invoice Preview.");
+            return;
         }
-        // Desktop/browser fallback.
-        frame.contentWindow.focus();
-        frame.contentWindow.print();
-      } catch (error) {
-        printButton.disabled = false;
-        printButton.textContent = "PRINT INVOICE";
-        alert("Unable to open printing. Please try again.");
-        console.error("JBT invoice print error:", error);
-      }
-    });
 
-    toolbar.appendChild(printButton);
-    toolbar.appendChild(closeButton);
-    overlay.appendChild(toolbar);
-    overlay.appendChild(frame);
-    document.body.appendChild(overlay);
+       // Do not copy the app's screen-only dark theme into the invoice preview.
+       // The invoice is a white paper document and must keep its own print palette.
+       const invoiceStyles = Array.from(document.querySelectorAll("style"))
+    .filter(style =>
+      !style.innerHTML.includes("JBT SMARTDESK PROFESSIONAL DARK THEME") &&
+      style.id !== "jbt-white-font-visibility-fix"
+    )
+    .map(style => style.innerHTML)
+    .join("\n");
 
-    const invoiceDocument = `<!DOCTYPE html>
-      <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-      <title>Invoice Preview</title><style>${invoiceStyles}</style>
-      <style>
-        html,body{margin:0;padding:12px;background:#e9e9e9;font-family:Arial,sans-serif;}
-        #paper{background:white;color:#30251d;max-width:850px;margin:0 auto;padding:25px;box-sizing:border-box;}
-        @media print{
-          @page{margin:10mm;}
-          html,body{background:white!important;padding:0!important;margin:0!important;}
-          #paper{display:block!important;position:static!important;float:none!important;max-width:none!important;width:100%!important;margin:0!important;padding:0!important;box-shadow:none!important;background:#fff!important;color:#30251d!important;opacity:1!important;transform:none!important;}
-          #paper,#paper *{visibility:visible!important;opacity:1!important;}
-          #paper [hidden],#paper .no-print{display:none!important;}
-          #paper table{display:table!important;width:100%;border-collapse:collapse!important;border:1px solid #333!important;}
-          #paper thead{display:table-header-group!important;} #paper tbody{display:table-row-group!important;} #paper tr{display:table-row!important;} #paper th,#paper td{display:table-cell!important;}
-          #paper th,#paper td{border:1px solid #333!important;padding:7px!important;text-align:left;}
-          #paper th{background:#eee2ce!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-        }
-      </style></head><body><div id="paper">${invoiceHtml}</div></body></html>`;
-    frame.srcdoc = invoiceDocument;
+preview.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <style>
+${invoiceStyles}
+</style>
+                <title>Invoice Preview</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        background: #e9e9e9;
+                        padding: 25px;
+                    }
+
+                    .toolbar {
+                        text-align: center;
+                        margin-bottom: 20px;
+                    }
+
+                    button {
+                        padding: 12px 25px;
+                        margin: 5px;
+                        border: none;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font-size: 15px;
+                    }
+
+                    .print-btn { background: #684323; color: white; }
+                    .close-btn { background: #555; color: white; }
+
+                    #paper {
+                        background: white;
+                        color: #30251d;
+                        max-width: 850px;
+                        margin: auto;
+                        padding: 25px;
+                        box-shadow: 0 2px 12px #aaa;
+                    }
+                    /* Keep invoice text readable on white paper even if legacy app CSS is copied. */
+                    #paper .jbt-invoice { background:#fff !important; color:#30251d !important; }
+                    #paper .jbt-invoice-details,
+                    #paper .jbt-invoice-details p,
+                    #paper .jbt-invoice-details b,
+                    #paper .jbt-invoice-details span,
+                    #paper .jbt-totals-table,
+                    #paper .jbt-totals-table td { color:#30251d !important; }
+
+                    @media print {
+                        /* FIX: the app-wide print CSS targets #printInvoice, but this preview uses #paper.
+                           Explicitly restore the preview invoice and its contents for PDF printing. */
+                        body > *:not(#printInvoice) { display: block !important; }
+                        #paper, #paper * { visibility: visible !important; }
+                        #paper { display: block !important; position: static !important; }
+                        body { background: white; padding: 0; }
+                        .toolbar { display: none; }
+                        #paper { box-shadow: none; padding: 0; }
+                        #paper table {
+    width: 100%;
+    border-collapse: collapse !important;
+    border: 1px solid #333 !important;
+}
+
+#paper th,
+#paper td {
+    border: 1px solid #333 !important;
+    padding: 7px !important;
+    text-align: left;
+}
+
+#paper th {
+    background: #eee2ce !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="toolbar">
+                    <button class="print-btn" onclick="window.print()">PRINT INVOICE</button>
+                    <button class="close-btn" onclick="window.close()">CLOSE PREVIEW</button>
+                </div>
+                <div id="paper">${invoiceHtml}</div>
+            </body>
+            </html>
+        `);
+
+        preview.document.close();
 }
 
 
@@ -5392,15 +5413,6 @@ document.getElementById("qplRows").addEventListener("keydown",function(e){
   catch(e){console.error('JBT cloud delete:',e);status('Delete waiting to sync');return false;}
  }
  function localKeys(){const a=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&shouldSync(k))a.push(k);}return a;}
- function mergeBillRecords(localValue,cloudValue){
-  let local=[],cloud=[];try{local=JSON.parse(localValue||'[]');}catch(e){}try{cloud=JSON.parse(cloudValue||'[]');}catch(e){}
-  if(!Array.isArray(local)||!Array.isArray(cloud))return cloudValue;
-  const merged=new Map();
-  // Cloud copy wins for an existing bill ID (it may contain later edits); local-only bills are retained.
-  cloud.forEach((r,i)=>{if(r&&typeof r==='object'){const id=String(r.id||r.invoice||('cloud-'+i));merged.set(id,r);}});
-  local.forEach((r,i)=>{if(r&&typeof r==='object'){const id=String(r.id||r.invoice||('local-'+i));if(!merged.has(id))merged.set(id,r);}});
-  return JSON.stringify(Array.from(merged.values()));
- }
  async function flushPending(){
   if(!ready||!navigator.onLine)return;
   const keys=Object.keys(pending);
@@ -5428,13 +5440,7 @@ document.getElementById("qplRows").addEventListener("keydown",function(e){
        cloudKeys.add(x.key);
        if(!Object.prototype.hasOwnProperty.call(pending,x.key)){
         const local=localStorage.getItem(x.key);
-        if(local===null){rawSet.call(localStorage,x.key,x.value);}
-        else if(local!==x.value){
-         if(/_records$/.test(x.key)){
-          const merged=mergeBillRecords(local,x.value);rawSet.call(localStorage,x.key,merged);
-          if(merged!==x.value)queueChange(x.key,merged);
-         }else{rawSet.call(localStorage,x.key,x.value);}
-        }
+        if(local===null||local===x.value)rawSet.call(localStorage,x.key,x.value);
        }
       }
      });
