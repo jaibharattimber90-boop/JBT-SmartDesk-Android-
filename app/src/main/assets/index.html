@@ -3470,9 +3470,11 @@ function openInvoicePreview(invoiceHtml){
         @media print{
           @page{margin:10mm;}
           html,body{background:white!important;padding:0!important;margin:0!important;}
-          #paper{display:block!important;position:static!important;max-width:none!important;margin:0!important;padding:0!important;box-shadow:none!important;color:#30251d!important;}
-          #paper,#paper *{visibility:visible!important;}
-          #paper table{width:100%;border-collapse:collapse!important;border:1px solid #333!important;}
+          #paper{display:block!important;position:static!important;float:none!important;max-width:none!important;width:100%!important;margin:0!important;padding:0!important;box-shadow:none!important;background:#fff!important;color:#30251d!important;opacity:1!important;transform:none!important;}
+          #paper,#paper *{visibility:visible!important;opacity:1!important;}
+          #paper [hidden],#paper .no-print{display:none!important;}
+          #paper table{display:table!important;width:100%;border-collapse:collapse!important;border:1px solid #333!important;}
+          #paper thead{display:table-header-group!important;} #paper tbody{display:table-row-group!important;} #paper tr{display:table-row!important;} #paper th,#paper td{display:table-cell!important;}
           #paper th,#paper td{border:1px solid #333!important;padding:7px!important;text-align:left;}
           #paper th{background:#eee2ce!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
         }
@@ -5390,6 +5392,15 @@ document.getElementById("qplRows").addEventListener("keydown",function(e){
   catch(e){console.error('JBT cloud delete:',e);status('Delete waiting to sync');return false;}
  }
  function localKeys(){const a=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&shouldSync(k))a.push(k);}return a;}
+ function mergeBillRecords(localValue,cloudValue){
+  let local=[],cloud=[];try{local=JSON.parse(localValue||'[]');}catch(e){}try{cloud=JSON.parse(cloudValue||'[]');}catch(e){}
+  if(!Array.isArray(local)||!Array.isArray(cloud))return cloudValue;
+  const merged=new Map();
+  // Cloud copy wins for an existing bill ID (it may contain later edits); local-only bills are retained.
+  cloud.forEach((r,i)=>{if(r&&typeof r==='object'){const id=String(r.id||r.invoice||('cloud-'+i));merged.set(id,r);}});
+  local.forEach((r,i)=>{if(r&&typeof r==='object'){const id=String(r.id||r.invoice||('local-'+i));if(!merged.has(id))merged.set(id,r);}});
+  return JSON.stringify(Array.from(merged.values()));
+ }
  async function flushPending(){
   if(!ready||!navigator.onLine)return;
   const keys=Object.keys(pending);
@@ -5417,7 +5428,13 @@ document.getElementById("qplRows").addEventListener("keydown",function(e){
        cloudKeys.add(x.key);
        if(!Object.prototype.hasOwnProperty.call(pending,x.key)){
         const local=localStorage.getItem(x.key);
-        if(local===null||local===x.value)rawSet.call(localStorage,x.key,x.value);
+        if(local===null){rawSet.call(localStorage,x.key,x.value);}
+        else if(local!==x.value){
+         if(/_records$/.test(x.key)){
+          const merged=mergeBillRecords(local,x.value);rawSet.call(localStorage,x.key,merged);
+          if(merged!==x.value)queueChange(x.key,merged);
+         }else{rawSet.call(localStorage,x.key,x.value);}
+        }
        }
       }
      });
