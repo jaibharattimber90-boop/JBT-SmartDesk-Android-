@@ -4548,6 +4548,7 @@ function deleteLedger(id){
 function deleteBillRecord(id){
  const records=readData("records",[]),record=records.find(r=>r.id===id);if(!record)return;
  if(!confirm("Delete bill "+(record.invoice||id)+" for "+(record.customer||"customer")+"? Its linked automatic accounting vouchers and receipt entries will also be removed. This cannot be undone."))return;
+ const deletedBills=readData("deletedBills",[]);if(!deletedBills.map(String).includes(String(id))){deletedBills.push(String(id));writeData("deletedBills",deletedBills);}
  writeData("records",records.filter(r=>r.id!==id));
  const linked=getVouchers().filter(v=>String(v.sourceId||"")!==String(id));accWrite("vouchers",linked);
  if(savedRecordId===id){savedRecordId=null;newBill();}
@@ -5382,7 +5383,7 @@ document.getElementById("qplRows").addEventListener("keydown",function(e){
 #jbtCloudStatus{max-width:190px;line-height:1.3}
 @media(max-width:650px){#jbtCloudSync{top:6px;right:6px;padding:6px;font-size:11px}#jbtCloudStatus{max-width:110px}#jbtCloudSync button{padding:7px}}
 </style>
-<div id="jbtCloudSync" aria-live="polite"><span id="jbtCloudStatus">Cloud sync not connected</span><button id="jbtCloudLogin" type="button">Sign in with Username</button></div>
+<div id="jbtCloudSync" aria-live="polite"><span id="jbtCloudStatus">Cloud sync not connected</span><button id="jbtCloudRefresh" type="button" disabled>REFRESH</button><button id="jbtCloudLogin" type="button">Sign in with Username</button></div>
 <script>
 (function(){
  'use strict';
@@ -5397,6 +5398,7 @@ document.getElementById("qplRows").addEventListener("keydown",function(e){
  };
  const statusEl=document.getElementById('jbtCloudStatus');
  const loginBtn=document.getElementById('jbtCloudLogin');
+ const refreshBtn=document.getElementById('jbtCloudRefresh');
  const PENDING_KEY='__JBT_CLOUD_PENDING_V1__';
  let db=null,auth=null,user=null,unsubscribe=null,ready=false,applyingRemote=false;
  let pending={};
@@ -5432,6 +5434,27 @@ document.getElementById("qplRows").addEventListener("keydown",function(e){
   local.forEach((r,i)=>{if(r&&typeof r==='object'){const id=String(r.id||r.invoice||('local-'+i));if(!merged.has(id))merged.set(id,r);}});
   return JSON.stringify(Array.from(merged.values()));
  }
+ function readDeletedBills(){try{return new Set(JSON.parse(localStorage.getItem(key('deletedBills'))||'[]').map(String));}catch(e){return new Set();}}
+ function filterDeletedBills(value){let a=[];try{a=JSON.parse(value||'[]');}catch(e){}if(!Array.isArray(a))return value;const gone=readDeletedBills();return JSON.stringify(a.filter(r=>r&&!gone.has(String(r.id||r.invoice||''))));}
+ function refreshVisibleData(){try{if(typeof showHistory==='function')showHistory();if(typeof updateDashboard==='function')updateDashboard();if(typeof updateCreditViewer==='function')updateCreditViewer();if(typeof refreshAccounting==='function')refreshAccounting();}catch(e){console.warn('JBT refresh UI:',e);}}
+ async function refreshCloudNow(){
+  if(!ready||!user||!navigator.onLine){status('Connect to cloud before refreshing');return;}
+  refreshBtn.disabled=true;status('Refreshing cloud data…');
+  try{
+   const col=db.collection('smartdeskUsers').doc(user.uid).collection('data');
+   const snap=await col.get({source:'server'});const cloud=new Map();snap.forEach(d=>{const x=d.data();const k=(x&&x.key)||keyFromDocId(d.id);if(k&&shouldSync(k)&&x&&typeof x.value==='string')cloud.set(k,x.value);});
+   applyingRemote=true;
+   try{
+    // Merge deletion markers first, then filter the bill records.
+    const tombKey=key('deletedBills');const cloudGone=cloud.get(tombKey);if(cloudGone!==undefined&&!Object.prototype.hasOwnProperty.call(pending,tombKey)){let localGone=[];try{localGone=JSON.parse(localStorage.getItem(tombKey)||'[]');}catch(e){}let remoteGone=[];try{remoteGone=JSON.parse(cloudGone||'[]');}catch(e){}const mergedGone=Array.from(new Set([...(Array.isArray(localGone)?localGone:[]),...(Array.isArray(remoteGone)?remoteGone:[])].map(String)));rawSet.call(localStorage,tombKey,JSON.stringify(mergedGone));}
+    for(const [k,v] of cloud){if(Object.prototype.hasOwnProperty.call(pending,k))continue;const local=localStorage.getItem(k);let next=v;if(/_records$/.test(k)&&local!==null)next=mergeBillRecords(local,v);if(/_records$/.test(k))next=filterDeletedBills(next);rawSet.call(localStorage,k,next);}
+    // Ensure locally-created tombstones reach cloud.
+    const localTomb=localStorage.getItem(tombKey);if(localTomb!==null&&!cloud.has(tombKey))queueChange(tombKey,localTomb);
+   }finally{applyingRemote=false;}
+   await flushPending();refreshVisibleData();status('Cloud refreshed ✓');
+  }catch(e){console.error('JBT manual cloud refresh:',e);status('Refresh failed: '+(e.code||'check internet'));}
+  finally{refreshBtn.disabled=!ready;}
+ }
  async function flushPending(){
   if(!ready||!navigator.onLine)return;
   const keys=Object.keys(pending);
@@ -5450,25 +5473,23 @@ document.getElementById("qplRows").addEventListener("keydown",function(e){
   unsubscribe=col.onSnapshot(async snap=>{
    if(!firstSnapshotHandled){
     firstSnapshotHandled=true;
-    const cloudKeys=new Set();
+    const cloudKeys=new Set(),cloudData=new Map();
+    snap.forEach(d=>{const x=d.data();if(x&&typeof x.key==='string'&&shouldSync(x.key)&&typeof x.value==='string'){cloudKeys.add(x.key);cloudData.set(x.key,x.value);}});
     applyingRemote=true;
     try{
-     snap.forEach(d=>{
-      const x=d.data();
-      if(x&&typeof x.key==='string'&&shouldSync(x.key)&&typeof x.value==='string'){
-       cloudKeys.add(x.key);
-       if(!Object.prototype.hasOwnProperty.call(pending,x.key)){
-        const local=localStorage.getItem(x.key);
-        if(local===null){rawSet.call(localStorage,x.key,x.value);}
-        else if(local!==x.value){
-         if(/_records$/.test(x.key)){
-          const merged=mergeBillRecords(local,x.value);rawSet.call(localStorage,x.key,merged);
-          if(merged!==x.value)queueChange(x.key,merged);
-         }else{rawSet.call(localStorage,x.key,x.value);}
-        }
-       }
-      }
-     });
+     // Tombstones are merged before bill records so an old cloud copy cannot resurrect a deleted bill.
+     const tombKey=key('deletedBills'),localGoneRaw=localStorage.getItem(tombKey)||'[]',cloudGoneRaw=cloudData.get(tombKey)||'[]';
+     let lg=[],cg=[];try{lg=JSON.parse(localGoneRaw);}catch(e){}try{cg=JSON.parse(cloudGoneRaw);}catch(e){}
+     const mergedGone=Array.from(new Set([...(Array.isArray(lg)?lg:[]),...(Array.isArray(cg)?cg:[])].map(String)));
+     if(mergedGone.length||cloudData.has(tombKey))rawSet.call(localStorage,tombKey,JSON.stringify(mergedGone));
+     for(const [k,v] of cloudData){
+      if(Object.prototype.hasOwnProperty.call(pending,k))continue;
+      const local=localStorage.getItem(k);let next=v;
+      if(/_records$/.test(k)&&local!==null)next=mergeBillRecords(local,v);
+      if(/_records$/.test(k))next=filterDeletedBills(next);
+      if(local!==next)rawSet.call(localStorage,k,next);
+      if(next!==v)queueChange(k,next);
+     }
     }finally{applyingRemote=false;}
     ready=true;
     // Upload local records not present in cloud, then replay offline changes.
@@ -5486,6 +5507,7 @@ document.getElementById("qplRows").addEventListener("keydown",function(e){
      if(typeof updateCreditViewer==='function')updateCreditViewer();
      if(typeof refreshAccounting==='function')refreshAccounting();
     }catch(refreshError){console.warn('JBT initial cloud UI refresh:',refreshError);}
+    refreshBtn.disabled=false;
     status('Cloud sync active ✓');
     return;
    }
@@ -5499,8 +5521,10 @@ document.getElementById("qplRows").addEventListener("keydown",function(e){
      if(ch.type==='removed')rawRemove.call(localStorage,k);
      else if(x&&typeof x.value==='string')rawSet.call(localStorage,k,x.value);
      if(/_records$/.test(k))recordsChanged=true;
+     if(k===key('deletedBills'))recordsChanged=true;
     });
    }finally{applyingRemote=false;}
+   if(recordsChanged){for(const k of localKeys()){if(/_records$/.test(k)){const old=localStorage.getItem(k),filtered=filterDeletedBills(old);if(filtered!==old)rawSet.call(localStorage,k,filtered);}}}
    // Firestore updates localStorage but does not fire the same-tab storage event.
    // Explicitly redraw the bill history and dependent summaries when records change.
    if(recordsChanged){
@@ -5521,8 +5545,9 @@ document.getElementById("qplRows").addEventListener("keydown",function(e){
   loadPending();
   auth.onAuthStateChanged(u=>{
    if(u){startSync(u);}
-   else{user=null;ready=false;if(unsubscribe){unsubscribe();unsubscribe=null;}loginBtn.textContent='Sign in with Username';status('Cloud sync not connected');}
+   else{user=null;ready=false;refreshBtn.disabled=true;if(unsubscribe){unsubscribe();unsubscribe=null;}loginBtn.textContent='Sign in with Username';status('Cloud sync not connected');}
   });
+  refreshBtn.addEventListener('click',refreshCloudNow);
   loginBtn.addEventListener('click',async()=>{
    try{
     if(auth.currentUser){await auth.signOut();return;}
