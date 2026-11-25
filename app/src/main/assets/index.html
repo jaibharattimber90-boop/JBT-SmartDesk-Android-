@@ -3392,6 +3392,34 @@ document.getElementById("pdfBillFile").addEventListener("change",async event=>{
  event.target.value="";
 });
 
+function stripInvoicePrintRules(css){
+    // The main app has print rules that hide everything except #printInvoice.
+    // This preview uses #paper instead, so carrying those rules into the
+    // iframe caused blank output in desktop printing and Android PDF export.
+    let out = String(css || "");
+    const removeAtRule = (source, pattern) => {
+      let result = source;
+      let match;
+      while ((match = pattern.exec(result))) {
+        const start = match.index;
+        const open = result.indexOf("{", start);
+        if (open < 0) break;
+        let depth = 0, end = open;
+        for (; end < result.length; end++) {
+          if (result[end] === "{") depth++;
+          else if (result[end] === "}" && --depth === 0) { end++; break; }
+        }
+        if (depth !== 0) break;
+        result = result.slice(0, start) + result.slice(end);
+        pattern.lastIndex = 0;
+      }
+      return result;
+    };
+    out = removeAtRule(out, /@media\s+print\b/ig);
+    out = removeAtRule(out, /@page\b/ig);
+    return out;
+}
+
 function openInvoicePreview(invoiceHtml){
     // Use an in-app preview instead of window.open(). Android WebView often
     // cannot close popup windows with window.close(), leaving the user stuck.
@@ -3403,7 +3431,7 @@ function openInvoicePreview(invoiceHtml){
         !style.innerHTML.includes("JBT SMARTDESK PROFESSIONAL DARK THEME") &&
         style.id !== "jbt-white-font-visibility-fix"
       )
-      .map(style => style.innerHTML)
+      .map(style => stripInvoicePrintRules(style.innerHTML))
       .join("\n");
 
     const overlay = document.createElement("div");
@@ -3472,10 +3500,14 @@ function openInvoicePreview(invoiceHtml){
           #paper{display:block!important;position:static!important;float:none!important;max-width:none!important;width:100%!important;margin:0!important;padding:0!important;box-shadow:none!important;background:#fff!important;color:#30251d!important;opacity:1!important;transform:none!important;}
           #paper,#paper *{visibility:visible!important;opacity:1!important;}
           #paper [hidden],#paper .no-print{display:none!important;}
-          #paper table{display:table!important;width:100%;border-collapse:collapse!important;border:1px solid #333!important;}
-          #paper thead{display:table-header-group!important;} #paper tbody{display:table-row-group!important;} #paper tr{display:table-row!important;} #paper th,#paper td{display:table-cell!important;}
-          #paper th,#paper td{border:1px solid #333!important;padding:7px!important;text-align:left;}
+          #paper table{display:table!important;width:100%;border-collapse:collapse!important;border:1px solid #333!important;margin-top:15px;}
+          #paper thead{display:table-header-group!important;} #paper tbody{display:table-row-group!important;} #paper tr{display:table-row!important;break-inside:avoid;} #paper th,#paper td{display:table-cell!important;}
+          #paper th,#paper td{border:1px solid #333!important;padding:7px!important;text-align:left;font-size:11px;}
           #paper th{background:#eee2ce!important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+          #paper h1{text-align:center;color:#684323!important;font-size:24px;}
+          #paper .company-box{text-align:center;border:1px solid #c59b55;padding:12px;}
+          #paper .total{text-align:right;font-size:20px;font-weight:bold;margin-top:15px;}
+          #paper .signature-area{display:flex;justify-content:space-between;margin-top:45px;break-inside:avoid;}
         }
       </style></head><body><div id="paper">${invoiceHtml}</div></body></html>`;
     frame.srcdoc = invoiceDocument;
