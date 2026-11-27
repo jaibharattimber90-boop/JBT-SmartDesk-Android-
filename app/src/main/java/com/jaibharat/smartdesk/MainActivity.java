@@ -55,8 +55,12 @@ public class MainActivity extends Activity {
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(true);
-        settings.setBuiltInZoomControls(true);
+        // Match the responsive HTML app at its intended viewport size.
+        // Disable accidental pinch/double-tap zoom inside the APK.
+        settings.setSupportZoom(false);
+        settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
+        settings.setTextZoom(100);
         view.setBackgroundColor(Color.WHITE);
     }
 
@@ -121,9 +125,16 @@ public class MainActivity extends Activity {
                                             try {
                                                 PrintManager pm = (PrintManager) getSystemService(PRINT_SERVICE);
                                                 if (pm == null) throw new IllegalStateException("Android print service unavailable");
+                                                // The web invoice preview contains the selected CSS @page size.
+                                                // Match Android's physical print media to that choice so A4 stays A4
+                                                // and A5 is a true portrait A5 sheet (not a landscape A4 reduction).
+                                                String normalizedHtml = html.toLowerCase().replaceAll("\\s+", "");
+                                                boolean useA5 = normalizedHtml.contains("size:148mm210mm");
+                                                PrintAttributes.MediaSize selectedMedia =
+                                                    useA5 ? PrintAttributes.MediaSize.ISO_A5 : PrintAttributes.MediaSize.ISO_A4;
                                                 pm.print("JBT Invoice", view.createPrintDocumentAdapter("JBT-Invoice"),
                                                     new PrintAttributes.Builder()
-                                                        .setMediaSize(PrintAttributes.MediaSize.ISO_A5)
+                                                        .setMediaSize(selectedMedia)
                                                         .setResolution(new PrintAttributes.Resolution("jbt", "JBT", 300, 300))
                                                         .setMinMargins(PrintAttributes.Margins.NO_MARGINS).build());
                                             } catch (Exception e) {
