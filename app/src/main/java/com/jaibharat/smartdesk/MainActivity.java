@@ -123,7 +123,7 @@ public class MainActivity extends Activity {
                                                 if (pm == null) throw new IllegalStateException("Android print service unavailable");
                                                 pm.print("JBT Invoice", view.createPrintDocumentAdapter("JBT-Invoice"),
                                                     new PrintAttributes.Builder()
-                                                        .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                                                        .setMediaSize(PrintAttributes.MediaSize.ISO_A5)
                                                         .setResolution(new PrintAttributes.Resolution("jbt", "JBT", 300, 300))
                                                         .setMinMargins(PrintAttributes.Margins.NO_MARGINS).build());
                                             } catch (Exception e) {
